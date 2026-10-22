@@ -1,8 +1,8 @@
 import json, os, random, sys, time, datetime
-import feedparser, requests, anthropic
+import feedparser, requests
 from PIL import Image, ImageDraw, ImageFont
 
-MODEL = os.getenv("MODEL", "claude-sonnet-5-5")
+MODEL = os.getenv("MODEL", "gemini-3.1-flash-lite")
 NICHE = os.getenv("NICHE", "relatable everyday life, tech, and work humor")
 LANG = os.getenv("LANG_OUT", "English")
 FEEDS = [
@@ -11,13 +11,17 @@ FEEDS = [
     "https://www.reddit.com/r/AskReddit/top/.rss?t=day",
 ]
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-client = anthropic.Anthropic()
 
 
 def ask(prompt):
-    r = client.messages.create(model=MODEL, max_tokens=800,
-                               messages=[{"role": "user", "content": prompt}])
-    text = r.content[0].text
+    r = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent",
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+        json={"contents": [{"parts": [{"text": prompt}]}],
+              "generationConfig": {"responseMimeType": "application/json"}},
+        timeout=60)
+    r.raise_for_status()
+    text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
     return json.loads(text[text.index("{"): text.rindex("}") + 1])
 
 

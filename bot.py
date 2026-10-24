@@ -14,23 +14,44 @@ QUERIES = [
     "soccer penalty kick", "football boots grass", "football stadium night",
     "soccer team huddle", "soccer tackle", "fan watching football tv",
 ]
+IDEA_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "top": {"type": "STRING"}, "bottom": {"type": "STRING"},
+        "caption": {"type": "STRING"}, "hashtags": {"type": "STRING"},
+    },
+    "required": ["top", "bottom", "caption", "hashtags"],
+}
+CHECK_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {"approved": {"type": "BOOLEAN"}, "reason": {"type": "STRING"}},
+    "required": ["approved", "reason"],
+}
 
 
-def gem(parts):
+def gem(parts, schema):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-    for i in range(5):
+    for i in range(6):
         r = requests.post(
             url, headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
             json={"contents": [{"parts": parts}],
-                  "generationConfig": {"responseMimeType": "application/json"}},
+                  "generationConfig": {"responseMimeType": "application/json",
+                                       "responseSchema": schema}},
             timeout=90)
         if r.status_code in (429, 500, 502, 503, 504):
             time.sleep(8 * (i + 1))
             continue
         r.raise_for_status()
         t = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(t[t.index("{"): t.rindex("}") + 1])
-    raise RuntimeError("Gemini unavailable")
+        try:
+            return json.loads(t)
+        except ValueError:
+            try:
+                return json.loads(t[t.index("{"): t.rindex("}") + 1])
+            except ValueError:
+                time.sleep(3)
+                continue
+    raise RuntimeError("Gemini unavailable or returned bad JSON")
 
 
 def load(path, default):
@@ -113,20 +134,20 @@ def generate():
         "(fans, referees, goalkeepers, clubs, the league, the national team, watching matches "
         "with friends). Do NOT identify or name anyone in the photo. Do not insult any real "
         "person. No politics, religion, sectarian or tragic content, no profanity. "
+        "Do not use double quotation marks inside the text. "
         f"Do not repeat these recent memes: {posted[-15:]}. "
-        'Reply ONLY JSON: {"top": "...", "bottom": "...", '
-        '"caption": "short Iraqi-Arabic caption with 1-2 emojis", '
-        '"hashtags": "#كرة_القدم #تحشيش #العراق #كرة #دوري"}'
+        "Fields: top and bottom are the meme lines; caption is a short Iraqi-Arabic caption "
+        "with 1-2 emojis; hashtags is 5 Arabic hashtags separated by spaces."
     )
     idea = gem([{"text": prompt},
                 {"inline_data": {"mime_type": "image/jpeg",
-                                 "data": base64.b64encode(buf.getvalue()).decode()}}])
+                                 "data": base64.b64encode(buf.getvalue()).decode()}}],
+               IDEA_SCHEMA)
     check = gem([{"text": (
         "You are a strict brand-safety reviewer for an Iraqi football meme page. Reject "
         "anything insulting to a real person, hateful, sectarian, political, religious, "
         "sexual, about tragedies, profane, misleading, or copied from a known joke. "
-        f"Content: {json.dumps(idea, ensure_ascii=False)}. "
-        'Reply ONLY JSON: {"approved": true, "reason": "..."}')}])
+        f"Content: {json.dumps(idea, ensure_ascii=False)}")}], CHECK_SCHEMA)
     if not check.get("approved"):
         print("Rejected by safety check:", check.get("reason"))
         return

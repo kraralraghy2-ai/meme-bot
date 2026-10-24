@@ -1,4 +1,5 @@
-anthropic
 feedparser
 requests
 pillow
+arabic-reshaper
+python-bidi
